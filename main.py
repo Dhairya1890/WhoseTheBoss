@@ -20,7 +20,7 @@ Chat_Session: Dict[UUID, List[Dict]] = {}
 
 @app.get('/')
 def read_root():
-    return {"Status": "Healthy"}
+    return {"Status": "success", "reply" : "Hello"}
 
 @app.get('/api/v1/start_session', dependencies=[Depends(get_api_key)])
 async def start_session():
