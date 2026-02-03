@@ -91,4 +91,3 @@ class IncomingMessage(BaseModel):
     message: Dict[str, Any]
     conversationHistory: List[Dict[str, Any]] = []
     metadata: Optional[Dict[str, Any]] = None
-    metadata:Dict[str, Any]
