@@ -270,9 +270,9 @@ def build_conversation_history(
     return history
 
 
-@app.get("/")
-async def health_check():
-    return {"status": "healthy", "reply": "Can you tell me more about the issue?"}
+# @app.get("/")
+# async def health_check():
+#     return {"status": "success", "reply": "Can you tell me more about the issue?"}
 
 
 @app.post("/")
