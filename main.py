@@ -272,7 +272,7 @@ def build_conversation_history(
 
 @app.get("/")
 async def health_check():
-    return {"status": "healthy", "service": "scam-detection-pipeline"}
+    return {"status": "healthy", "reply": "Can you tell me more about the issue?"}
 
 
 @app.post("/")
