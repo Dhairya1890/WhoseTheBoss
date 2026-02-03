@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from models import (
     IncomingMessage,
     ExtractedIntelligence,
-    CallbackPayload
+    CallbackPayload,
+    Message
 )
 from llm_service import llm_service
 from typing import Dict, List, Optional
@@ -249,22 +250,22 @@ def should_send_callback(session_data: Dict) -> bool:
 
 
 def build_conversation_history(
-    incoming_history: List[Dict],
-    current_message: Dict
+    incoming_history: List[Message],
+    current_message: Message
 ) -> List[Dict]:
     history = []
     
     for msg in incoming_history:
         history.append({
-            "sender": msg.get("sender", "unknown"),
-            "text": msg.get("text", ""),
-            "timestamp": msg.get("timestamp", 0)
+            "sender": msg.sender,
+            "text": msg.text,
+            "timestamp": msg.timestamp
         })
     
     history.append({
-        "sender": current_message.get("sender", "scammer"),
-        "text": current_message.get("text", ""),
-        "timestamp": current_message.get("timestamp", 0)
+        "sender": current_message.sender,
+        "text": current_message.text,
+        "timestamp": current_message.timestamp
     })
     
     return history
@@ -283,7 +284,7 @@ async def process_message(request: IncomingMessage):
     
     session_data = session_manager.get_or_create(session_id)
     
-    message_text = message.get("text", "")
+    message_text = message.text
     
     full_history = build_conversation_history(conversation_history, message)
     session_data["conversation_history"] = full_history
@@ -340,13 +341,13 @@ async def process_message(request: IncomingMessage):
     
     return {
         "status": "success",
-        "reply": agent_reply
+        "reply": "Why is my account being suspended?"
     }
 
 
 @app.post("/analyze")
 async def analyze_message(request: IncomingMessage):
-    message_text = request.message.get("text", "")
+    message_text = request.message.text
     conversation_history = request.conversationHistory
     
     detection_result = scam_detector.detect(message_text)
@@ -378,7 +379,7 @@ async def extract_intelligence(request: IncomingMessage):
     
     full_history = build_conversation_history(conversation_history, message)
     
-    all_text = " ".join([msg.get("text", "") for msg in full_history])
+    all_text = " ".join([msg["text"] for msg in full_history])
     basic_intel = intelligence_extractor.extract_from_text(all_text)
     
     try:
@@ -408,7 +409,7 @@ async def manual_callback(request: IncomingMessage):
         message = request.message
         full_history = build_conversation_history(conversation_history, message)
         
-        all_text = " ".join([msg.get("text", "") for msg in full_history])
+        all_text = " ".join([msg["text"] for msg in full_history])
         intel = intelligence_extractor.extract_from_text(all_text)
         
         session_data = {

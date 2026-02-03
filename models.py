@@ -32,7 +32,7 @@ class Channel(str, Enum):
 class Message(BaseModel):
     sender: str
     text: str
-    timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp() * 1000))
+    timestamp: int
 
 
 class MetaData(BaseModel):
