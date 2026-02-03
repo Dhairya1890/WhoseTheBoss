@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -32,7 +32,21 @@ class Channel(str, Enum):
 class Message(BaseModel):
     sender: str
     text: str
-    timestamp: int
+    timestamp: Optional[int] = None
+
+    @validator("timestamp", pre=True)
+    def normalize_timestamp(cls, value: Any) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        if isinstance(value, datetime):
+            return int(value.timestamp() * 1000)
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        return value
 
 
 class MetaData(BaseModel):
