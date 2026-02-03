@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime
 
@@ -21,3 +21,9 @@ class Messages(BaseModel):
 class ChatSession(BaseModel):
     session_id: UUID = Field(default_factory=uuid4)
     messages: List[Messages]
+
+class IncomingMessage(BaseModel):
+    sessionId:str
+    message:Dict[str, Any]
+    conversationHistory:List
+    metadata:Dict[str, Any]

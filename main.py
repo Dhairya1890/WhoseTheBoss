@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from models import Messages 
+from models import Messages, IncomingMessage
 from uuid import UUID, uuid4
 from datetime import datetime
 from typing import List, Dict
@@ -18,11 +18,16 @@ app.add_middleware(
 
 Chat_Session: Dict[UUID, List[Dict]] = {}
 
-@app.get('/')
-def read_root():
-    return {"Status": "success", "reply" : "Hello"}
+@app.post('/')
+async def read_root(message : IncomingMessage):
+    return{
+        "status" : "success",
+        "reply" : "Why is my account being suspended?"
+    }
 
-@app.get('/api/v1/start_session', dependencies=[Depends(get_api_key)])
+
+
+@app.post('/api/v1/start_session', dependencies=[Depends(get_api_key)])
 async def start_session():
     # Create a chat id
     session_id = uuid4()
