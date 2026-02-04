@@ -338,7 +338,7 @@ async def process_message(request: IncomingMessage):
     
     return {
         "status": "success",
-        "reply": "Hello GUVI! How Are You"
+        "reply": "Why will my account be blocked?"
     }
 
 
