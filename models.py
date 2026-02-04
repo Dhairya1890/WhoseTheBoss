@@ -32,34 +32,20 @@ class Channel(str, Enum):
 class Message(BaseModel):
     sender: str
     text: str
-    timestamp: Optional[int] = None
-
-    @validator("timestamp", pre=True)
-    def normalize_timestamp(cls, value: Any) -> Optional[int]:
-        if value is None or value == "":
-            return None
-        if isinstance(value, datetime):
-            return int(value.timestamp() * 1000)
-        if isinstance(value, (int, float)):
-            return int(value)
-        if isinstance(value, str):
-            stripped = value.strip()
-            if stripped.isdigit():
-                return int(stripped)
-        return value
+    timestamp: int
 
 
 class MetaData(BaseModel):
-    channel: str
-    language: str
-    locale: str
+    channel: Optional[str] = None
+    language: Optional[str] = None
+    locale: Optional[str] = None
 
 
 class ConversationRequest(BaseModel):
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
-    metadata: MetaData
+    metadata: Optional[MetaData] = None
 
 
 class ExtractedIntelligence(BaseModel):
@@ -104,4 +90,4 @@ class IncomingMessage(BaseModel):
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
-    metadata: Optional[MetaData] = None
+    metadata: MetaData
