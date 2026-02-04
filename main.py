@@ -342,130 +342,130 @@ async def process_message(request: IncomingMessage):
     }
 
 
-@app.post("/analyze")
-async def analyze_message(request: IncomingMessage):
-    message_text = request.message.text
-    conversation_history = request.conversationHistory
+# @app.post("/analyze")
+# async def analyze_message(request: IncomingMessage):
+#     message_text = request.message.text
+#     conversation_history = request.conversationHistory
     
-    detection_result = scam_detector.detect(message_text)
+#     detection_result = scam_detector.detect(message_text)
     
-    if detection_result["is_scam"]:
-        try:
-            llm_result = await llm_service.detect_scam_intent(
-                message_text,
-                conversation_history
-            )
-            detection_result["llm_analysis"] = llm_result
-        except Exception:
-            pass
+#     if detection_result["is_scam"]:
+#         try:
+#             llm_result = await llm_service.detect_scam_intent(
+#                 message_text,
+#                 conversation_history
+#             )
+#             detection_result["llm_analysis"] = llm_result
+#         except Exception:
+#             pass
     
-    intelligence = intelligence_extractor.extract_from_text(message_text)
+#     intelligence = intelligence_extractor.extract_from_text(message_text)
     
-    return {
-        "status": "success",
-        "detection": detection_result,
-        "intelligence": intelligence
-    }
+#     return {
+#         "status": "success",
+#         "detection": detection_result,
+#         "intelligence": intelligence
+#     }
 
 
-@app.post("/extract-intelligence")
-async def extract_intelligence(request: IncomingMessage):
-    session_id = request.sessionId
-    conversation_history = request.conversationHistory
-    message = request.message
+# @app.post("/extract-intelligence")
+# async def extract_intelligence(request: IncomingMessage):
+#     session_id = request.sessionId
+#     conversation_history = request.conversationHistory
+#     message = request.message
     
-    full_history = build_conversation_history(conversation_history, message)
+#     full_history = build_conversation_history(conversation_history, message)
     
-    all_text = " ".join([msg["text"] for msg in full_history])
-    basic_intel = intelligence_extractor.extract_from_text(all_text)
+#     all_text = " ".join([msg["text"] for msg in full_history])
+#     basic_intel = intelligence_extractor.extract_from_text(all_text)
     
-    try:
-        llm_intel = await llm_service.extract_intelligence_llm(full_history)
-        merged_intel = intelligence_extractor.merge_intelligence(basic_intel, llm_intel)
-        merged_intel["tactics"] = llm_intel.get("tactics", [])
-        merged_intel["agentNotes"] = llm_intel.get("agentNotes", "")
-    except Exception:
-        merged_intel = basic_intel
-        merged_intel["tactics"] = []
-        merged_intel["agentNotes"] = ""
+#     try:
+#         llm_intel = await llm_service.extract_intelligence_llm(full_history)
+#         merged_intel = intelligence_extractor.merge_intelligence(basic_intel, llm_intel)
+#         merged_intel["tactics"] = llm_intel.get("tactics", [])
+#         merged_intel["agentNotes"] = llm_intel.get("agentNotes", "")
+#     except Exception:
+#         merged_intel = basic_intel
+#         merged_intel["tactics"] = []
+#         merged_intel["agentNotes"] = ""
     
-    return {
-        "status": "success",
-        "sessionId": session_id,
-        "extractedIntelligence": merged_intel
-    }
+#     return {
+#         "status": "success",
+#         "sessionId": session_id,
+#         "extractedIntelligence": merged_intel
+#     }
 
 
-@app.post("/callback")
-async def manual_callback(request: IncomingMessage):
-    session_id = request.sessionId
-    session_data = session_manager.get_session(session_id)
+# @app.post("/callback")
+# async def manual_callback(request: IncomingMessage):
+#     session_id = request.sessionId
+#     session_data = session_manager.get_session(session_id)
     
-    if not session_data:
-        conversation_history = request.conversationHistory
-        message = request.message
-        full_history = build_conversation_history(conversation_history, message)
+#     if not session_data:
+#         conversation_history = request.conversationHistory
+#         message = request.message
+#         full_history = build_conversation_history(conversation_history, message)
         
-        all_text = " ".join([msg["text"] for msg in full_history])
-        intel = intelligence_extractor.extract_from_text(all_text)
+#         all_text = " ".join([msg["text"] for msg in full_history])
+#         intel = intelligence_extractor.extract_from_text(all_text)
         
-        session_data = {
-            "scam_detected": True,
-            "turn_count": len(full_history),
-            "extracted_intelligence": intel,
-            "agent_notes": "Manual callback triggered"
-        }
+#         session_data = {
+#             "scam_detected": True,
+#             "turn_count": len(full_history),
+#             "extracted_intelligence": intel,
+#             "agent_notes": "Manual callback triggered"
+#         }
     
-    success = await send_callback_to_guvi(session_id, session_data)
+#     success = await send_callback_to_guvi(session_id, session_data)
     
-    return {
-        "status": "success" if success else "failed",
-        "callbackSent": success,
-        "payload": {
-            "sessionId": session_id,
-            "scamDetected": session_data.get("scam_detected", True),
-            "totalMessagesExchanged": session_data.get("turn_count", 0),
-            "extractedIntelligence": session_data.get("extracted_intelligence", {}),
-            "agentNotes": session_data.get("agent_notes", "")
-        }
-    }
+#     return {
+#         "status": "success" if success else "failed",
+#         "callbackSent": success,
+#         "payload": {
+#             "sessionId": session_id,
+#             "scamDetected": session_data.get("scam_detected", True),
+#             "totalMessagesExchanged": session_data.get("turn_count", 0),
+#             "extractedIntelligence": session_data.get("extracted_intelligence", {}),
+#             "agentNotes": session_data.get("agent_notes", "")
+#         }
+#     }
 
 
-@app.get("/session/{session_id}")
-async def get_session_info(session_id: str):
-    session_data = session_manager.get_session(session_id)
+# @app.get("/session/{session_id}")
+# async def get_session_info(session_id: str):
+#     session_data = session_manager.get_session(session_id)
     
-    if not session_data:
-        raise HTTPException(status_code=404, detail="Session not found")
+#     if not session_data:
+#         raise HTTPException(status_code=404, detail="Session not found")
     
-    return {
-        "status": "success",
-        "sessionId": session_id,
-        "scamDetected": session_data.get("scam_detected", False),
-        "scamType": session_data.get("scam_type"),
-        "confidence": session_data.get("confidence", 0),
-        "turnCount": session_data.get("turn_count", 0),
-        "extractedIntelligence": session_data.get("extracted_intelligence", {}),
-        "callbackSent": session_data.get("callback_sent", False)
-    }
+#     return {
+#         "status": "success",
+#         "sessionId": session_id,
+#         "scamDetected": session_data.get("scam_detected", False),
+#         "scamType": session_data.get("scam_type"),
+#         "confidence": session_data.get("confidence", 0),
+#         "turnCount": session_data.get("turn_count", 0),
+#         "extractedIntelligence": session_data.get("extracted_intelligence", {}),
+#         "callbackSent": session_data.get("callback_sent", False)
+#     }
 
 
-@app.delete("/session/{session_id}")
-async def end_session(session_id: str):
-    session_data = session_manager.get_session(session_id)
+# @app.delete("/session/{session_id}")
+# async def end_session(session_id: str):
+#     session_data = session_manager.get_session(session_id)
     
-    if not session_data:
-        raise HTTPException(status_code=404, detail="Session not found")
+#     if not session_data:
+#         raise HTTPException(status_code=404, detail="Session not found")
     
-    if session_data.get("scam_detected") and not session_data.get("callback_sent"):
-        await send_callback_to_guvi(session_id, session_data)
+#     if session_data.get("scam_detected") and not session_data.get("callback_sent"):
+#         await send_callback_to_guvi(session_id, session_data)
     
-    session_manager.delete_session(session_id)
+#     session_manager.delete_session(session_id)
     
-    return {
-        "status": "success",
-        "message": "Session ended"
-    }
+#     return {
+#         "status": "success",
+#         "message": "Session ended"
+#     }
 
 
 if __name__ == "__main__":
