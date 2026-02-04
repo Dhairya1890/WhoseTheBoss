@@ -259,13 +259,13 @@ def build_conversation_history(
         history.append({
             "sender": msg.sender,
             "text": msg.text,
-            "timestamp": msg.timestamp
+            "timestamp": msg.timestamp or 0
         })
     
     history.append({
         "sender": current_message.sender,
         "text": current_message.text,
-        "timestamp": current_message.timestamp
+        "timestamp": current_message.timestamp or 0
     })
     
     return history

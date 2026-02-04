@@ -32,20 +32,20 @@ class Channel(str, Enum):
 class Message(BaseModel):
     sender: str
     text: str
-    timestamp: int
+    timestamp: Optional[int] = None
 
 
 class MetaData(BaseModel):
-    channel: str
-    language: str
-    locale: str
+    channel: Optional[str] = None
+    language: Optional[str] = None
+    locale: Optional[str] = None
 
 
 class ConversationRequest(BaseModel):
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
-    metadata: MetaData
+    metadata: Optional[MetaData] = None
 
 
 class ExtractedIntelligence(BaseModel):
@@ -90,4 +90,4 @@ class IncomingMessage(BaseModel):
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
-    metadata: MetaData
+    metadata: Optional[MetaData] = None
