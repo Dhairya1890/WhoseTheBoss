@@ -1,19 +1,12 @@
 import os
 import re
-import asyncio
+import httpx
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
 
-load_dotenv()
-
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-2.5-flash-lite"
-
-client = genai.Client(api_key=GEMINI_API_KEY)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 
 class GeminiLLMService:
@@ -21,58 +14,70 @@ class GeminiLLMService:
     def __init__(self):
         self.api_key = GEMINI_API_KEY
         self.model = GEMINI_MODEL
-        self.client = client
+        self.url = GEMINI_URL
 
     async def _call_gemini(self, prompt: str, system_instruction: str = None) -> str:
-        try:
-            config = types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=150,  # Reduced to save tokens
-                top_p=0.9,
-            )
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 256,
+                "topP": 0.9
+            }
+        }
+        
+        if system_instruction:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_instruction}]
+            }
+        
+        url_with_key = f"{self.url}?key={self.api_key}"
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url_with_key, json=payload, headers=headers)
             
-            if system_instruction:
-                config.system_instruction = system_instruction
-            
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=config
-            )
-            
-            if response and response.text:
-                return response.text
-            return ""
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                print(f"Rate limited, waiting 5s...")
-                await asyncio.sleep(5)
-                # Single retry
-                try:
-                    response = self.client.models.generate_content(
-                        model=self.model,
-                        contents=prompt,
-                        config=config
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception:
-                    pass
-            print(f"Gemini API error: {e}")
+            if response.status_code == 200:
+                result = response.json()
+                if "candidates" in result and len(result["candidates"]) > 0:
+                    candidate = result["candidates"][0]
+                    if "content" in candidate and "parts" in candidate["content"]:
+                        return candidate["content"]["parts"][0].get("text", "")
             return ""
 
     async def detect_scam_intent(self, message: str, conversation_history: List[Dict] = None) -> Dict:
         history_text = ""
         if conversation_history:
-            for msg in conversation_history[-3:]:  # Reduced from 5 to 3
+            for msg in conversation_history[-5:]:
                 sender = msg.get("sender", "unknown")
                 text = msg.get("text", "")
                 history_text += f"{sender}: {text}\n"
         
-        system_instruction = """Scam detection. Return JSON: is_scam(bool), confidence(0-1), scam_type, indicators[], reasoning"""
+        system_instruction = """You are a scam detection expert. Analyze messages for scam indicators.
+Return ONLY a JSON object with these fields:
+- is_scam: boolean
+- confidence: float between 0 and 1
+- scam_type: string (Banking Fraud, UPI Fraud, Phishing, Lottery Scam, Tech Support Scam, or null)
+- indicators: list of detected scam indicators
+- reasoning: brief explanation"""
 
-        prompt = f"""History:\n{history_text}\nMessage: {message}\nJSON:"""
+        prompt = f"""Analyze this message for scam intent:
+
+Conversation History:
+{history_text}
+
+Current Message: {message}
+
+Respond with JSON only."""
 
         response = await self._call_gemini(prompt, system_instruction)
         
@@ -101,7 +106,64 @@ class GeminiLLMService:
                 "detection_method": "llm"
             }
         except (json.JSONDecodeError, KeyError, TypeError):
-            raise Exception("LLM failed to provide a valid scam detection response")
+            return self._fallback_detection(original_message)
+
+    def _fallback_detection(self, message: str) -> Dict:
+        text_lower = message.lower()
+        
+        critical_keywords = [
+            "account blocked", "verify immediately", "share otp",
+            "share cvv", "share pin", "account suspended",
+            "urgent verification", "confirm password"
+        ]
+        
+        warning_keywords = [
+            "verify", "urgent", "immediately", "account", "bank",
+            "suspended", "blocked", "upi", "payment failed"
+        ]
+        
+        confidence = 0.0
+        indicators = []
+        scam_type = None
+        
+        for keyword in critical_keywords:
+            if keyword in text_lower:
+                confidence += 0.4
+                indicators.append(f"Critical keyword: {keyword}")
+                scam_type = "Banking Fraud"
+        
+        warning_count = 0
+        for keyword in warning_keywords:
+            if keyword in text_lower:
+                confidence += 0.1
+                warning_count += 1
+                if warning_count <= 3:
+                    indicators.append(f"Warning keyword: {keyword}")
+        
+        if warning_count >= 2 and not scam_type:
+            scam_type = "Phishing"
+        
+        phone_pattern = re.compile(r'\+?\d{10,12}')
+        if phone_pattern.search(message):
+            confidence += 0.1
+            indicators.append("Contains phone number")
+        
+        url_pattern = re.compile(r'http[s]?://[^\s]+|bit\.ly|tinyurl')
+        if url_pattern.search(message):
+            confidence += 0.15
+            indicators.append("Contains suspicious URL")
+        
+        confidence = min(confidence, 1.0)
+        is_scam = confidence >= 0.3
+        
+        return {
+            "is_scam": is_scam,
+            "confidence": round(confidence, 2),
+            "scam_type": scam_type if is_scam else None,
+            "indicators": indicators[:5],
+            "reasoning": f"Fallback detection with {len(indicators)} indicators",
+            "detection_method": "fallback"
+        }
 
     async def generate_agent_response(
         self,
@@ -112,18 +174,44 @@ class GeminiLLMService:
     ) -> str:
         history_text = ""
         if conversation_history:
-            # Only use last 3 messages to reduce tokens
-            for msg in conversation_history[-3:]:
+            for msg in conversation_history[-6:]:
                 sender = msg.get("sender", "unknown")
                 text = msg.get("text", "")
                 if sender == "scammer":
-                    history_text += f"S: {text}\n"
+                    history_text += f"Scammer: {text}\n"
                 else:
-                    history_text += f"V: {text}\n"
+                    history_text += f"You (victim): {text}\n"
         
-        system_instruction = """Play naive victim. Extract scammer info (accounts, UPI, phones, links). Sound confused, ask for details. 1-2 sentences only."""
+        intel_summary = []
+        if extracted_intelligence.get("phoneNumbers"):
+            intel_summary.append(f"Phone numbers collected: {len(extracted_intelligence['phoneNumbers'])}")
+        if extracted_intelligence.get("upiIds"):
+            intel_summary.append(f"UPI IDs collected: {len(extracted_intelligence['upiIds'])}")
+        if extracted_intelligence.get("phishingLinks"):
+            intel_summary.append(f"Links collected: {len(extracted_intelligence['phishingLinks'])}")
+        
+        system_instruction = """You are playing a naive victim to extract information from a scammer.
+Your goals:
+1. Sound like a real confused person
+2. Ask clarifying questions to extract more information
+3. NEVER reveal you know it's a scam
+4. Try to get: account numbers, UPI IDs, phone numbers, links, names
+5. Show concern and willingness to comply, but ask for details
+6. Keep responses short (1-2 sentences max)
+7. Use simple language like a regular person would
 
-        prompt = f"""Type:{scam_type}\nChat:\n{history_text}\nScammer:{message}\nReply as victim:"""
+Respond with ONLY the victim's reply text, nothing else."""
+
+        prompt = f"""Scam Type: {scam_type}
+
+Conversation so far:
+{history_text}
+
+Latest scammer message: {message}
+
+Intelligence gathered so far: {', '.join(intel_summary) if intel_summary else 'None yet'}
+
+Generate a response as the naive victim to continue extracting information."""
 
         response = await self._call_gemini(prompt, system_instruction)
         
@@ -133,19 +221,80 @@ class GeminiLLMService:
                 response = response[:200]
             return response
         
+        return self._get_fallback_response(scam_type, len(conversation_history))
+
+    def _get_fallback_response(self, scam_type: str, turn: int) -> str:
+        responses = {
+            "Banking Fraud": [
+                "Oh no, what happened to my account?",
+                "What do I need to do to fix this?",
+                "Should I share my account details with you?",
+                "What information do you need from me?",
+                "Is this really from the bank?"
+            ],
+            "UPI Fraud": [
+                "My UPI is not working? What should I do?",
+                "Do I need to verify something?",
+                "What details do you need?",
+                "Can you help me fix this?",
+                "Should I send you my UPI ID?"
+            ],
+            "Phishing": [
+                "Why do you need this information?",
+                "Is this official?",
+                "What will happen if I don't verify?",
+                "Can you tell me more about the issue?",
+                "What details should I provide?"
+            ],
+            "Lottery Scam": [
+                "I won something? Really?",
+                "How do I claim my prize?",
+                "What do I need to pay?",
+                "Is this real?",
+                "How did I win?"
+            ],
+            "Tech Support Scam": [
+                "My computer has a virus?",
+                "What should I do?",
+                "How can you help me?",
+                "Is this serious?",
+                "What information do you need?"
+            ]
+        }
+        
+        default_responses = [
+            "Can you explain more?",
+            "What should I do?",
+            "I don't understand, please help",
+            "What information do you need?",
+            "How can I verify this?"
+        ]
+        
+        response_list = responses.get(scam_type, default_responses)
+        idx = turn % len(response_list)
+        return response_list[idx]
 
     async def extract_intelligence_llm(self, conversation_history: List[Dict]) -> Dict:
-        # Only use last 5 messages to reduce tokens
-        recent_msgs = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
         full_conversation = ""
-        for msg in recent_msgs:
+        for msg in conversation_history:
             sender = msg.get("sender", "unknown")
             text = msg.get("text", "")
             full_conversation += f"{sender}: {text}\n"
         
-        system_instruction = """Extract: bankAccounts[], upiIds[], phishingLinks[], phoneNumbers[], tactics[]. Return JSON only."""
+        system_instruction = """Extract intelligence from this scam conversation.
+Return ONLY a JSON object with:
+- bankAccounts: list of bank account numbers found
+- upiIds: list of UPI IDs found (format: xxx@upi)
+- phishingLinks: list of suspicious URLs found
+- phoneNumbers: list of phone numbers found
+- suspiciousKeywords: list of scam-related keywords used
+- tactics: list of manipulation tactics identified (urgency, authority, fear, etc.)
+- agentNotes: brief summary of scammer's approach"""
 
-        prompt = f"""Chat:\n{full_conversation}\nJSON:"""
+        prompt = f"""Conversation:
+{full_conversation}
+
+Extract all intelligence. Return JSON only."""
 
         response = await self._call_gemini(prompt, system_instruction)
         
@@ -175,7 +324,46 @@ class GeminiLLMService:
                 "agentNotes": result.get("agentNotes", "")
             }
         except (json.JSONDecodeError, KeyError, TypeError):
-            raise Exception("LLM failed to extract intelligence from conversation")
+            return self._fallback_intelligence_extraction(conversation_history)
+
+    def _fallback_intelligence_extraction(self, conversation_history: List[Dict]) -> Dict:
+        full_text = " ".join([msg.get("text", "") for msg in conversation_history])
+        
+        phone_pattern = re.compile(r'\+?91?\s*\d{10}|\b\d{10}\b')
+        url_pattern = re.compile(r'http[s]?://[^\s]+')
+        upi_pattern = re.compile(r'[\w\.\-]+@[a-zA-Z]+')
+        bank_pattern = re.compile(r'\b\d{9,18}\b')
+        
+        keywords = []
+        text_lower = full_text.lower()
+        scam_keywords = [
+            "urgent", "immediately", "blocked", "suspended", "verify",
+            "otp", "cvv", "pin", "account", "bank", "upi", "payment",
+            "prize", "won", "lottery", "claim", "refund"
+        ]
+        for kw in scam_keywords:
+            if kw in text_lower:
+                keywords.append(kw)
+        
+        tactics = []
+        if any(w in text_lower for w in ["urgent", "immediately", "now", "today"]):
+            tactics.append("Urgency")
+        if any(w in text_lower for w in ["bank", "officer", "government", "rbi"]):
+            tactics.append("Authority impersonation")
+        if any(w in text_lower for w in ["blocked", "suspended", "terminated", "legal"]):
+            tactics.append("Fear tactics")
+        if any(w in text_lower for w in ["otp", "cvv", "pin", "password"]):
+            tactics.append("Credential harvesting")
+        
+        return {
+            "bankAccounts": list(set(bank_pattern.findall(full_text)))[:5],
+            "upiIds": list(set(upi_pattern.findall(full_text)))[:5],
+            "phishingLinks": list(set(url_pattern.findall(full_text)))[:5],
+            "phoneNumbers": list(set(phone_pattern.findall(full_text)))[:5],
+            "suspiciousKeywords": list(set(keywords))[:10],
+            "tactics": tactics,
+            "agentNotes": f"Detected {len(tactics)} manipulation tactics"
+        }
 
 
 llm_service = GeminiLLMService()
