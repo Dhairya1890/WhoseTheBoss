@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models import (
-    IncomingMessage,
+    IncomingMessageRequest,
     ExtractedIntelligence,
     CallbackPayload,
     Message
@@ -277,7 +277,7 @@ def build_conversation_history(
 
 
 @app.post("/")
-async def process_message(request: IncomingMessage):
+async def process_message(request: IncomingMessageRequest):
     # session_id = request.sessionId
     # message = request.message
     # conversation_history = request.conversationHistory
