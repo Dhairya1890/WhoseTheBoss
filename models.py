@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Any
 from uuid import UUID, uuid4
 from datetime import datetime
 from enum import Enum
@@ -17,14 +17,12 @@ class ChatSession(BaseModel):
 
 
 class SenderType(str, Enum):
-    """Enum representing the type of message sender."""
     SCAMMER = "scammer"
     USER = "user"
     AGENT = "agent"
 
 
-class ChannelType(str, Enum):
-    """Enum representing supported communication channels."""
+class Channel(str, Enum):
     SMS = "SMS"
     WHATSAPP = "Whatsapp"
     EMAIL = "Email"
@@ -32,41 +30,31 @@ class ChannelType(str, Enum):
 
 
 class Message(BaseModel):
-    """Represents a single message in the conversation."""
-    sender: SenderType
+    sender: str
     text: str
-    timestamp: int
+    timestamp: Optional[int] = None
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def normalize_timestamp(cls, value: Any) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        if isinstance(value, datetime):
+            return int(value.timestamp() * 1000)
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        return value
 
 
 class MetaData(BaseModel):
-    """Metadata associated with the conversation."""
-    channel: ChannelType
-    language: str = "English"
-    locale: str = "IN"
+    channel: str
+    language: str
+    locale: str
 
-
-class IncomingMessageRequest(BaseModel):
-    """Data model for incoming messages from suspected scammers."""
-    sessionId: str
-    message: Message
-    conversationHistory: List[Message] = []
-    metadata: MetaData
-
-    def is_first_message(self) -> bool:
-        """Check if this is the first message in the conversation."""
-        return len(self.conversationHistory) == 0
-
-    def get_full_conversation(self) -> List[Message]:
-        """Get the full conversation including the current message."""
-        return self.conversationHistory + [self.message]
-
-    def get_message_count(self) -> int:
-        """Get the total number of messages including the current one."""
-        return len(self.conversationHistory) + 1
-
-
-# Alias for backward compatibility
-ConversationRequest = IncomingMessageRequest
 
 
 class ExtractedIntelligence(BaseModel):
@@ -105,3 +93,10 @@ class CallbackPayload(BaseModel):
     totalMessagesExchanged: int
     extractedIntelligence: ExtractedIntelligence
     agentNotes: str
+
+
+class IncomingMessage(BaseModel):
+    sessionId: str
+    message: Message
+    conversationHistory: Optional[List[Message]] = []
+    metadata: Optional[MetaData] = None
