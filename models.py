@@ -90,4 +90,4 @@ class IncomingMessage(BaseModel):
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
-    metadata: Optional[MetaData] = None
+    metadata: Dict
