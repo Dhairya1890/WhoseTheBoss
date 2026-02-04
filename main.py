@@ -1,10 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models import (
-    IncomingMessageRequest,
-    ExtractedIntelligence,
-    CallbackPayload,
-    Message
+    IncomingMessage
 )
 from llm_service import llm_service
 from typing import Dict, List, Optional
@@ -23,252 +20,252 @@ app = FastAPI()
 #     allow_headers=["*"]
 # )
 
-GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
+# GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 
 
-class SessionManager:
+# class SessionManager:
     
-    def __init__(self):
-        self.sessions: Dict[str, Dict] = {}
+#     def __init__(self):
+#         self.sessions: Dict[str, Dict] = {}
     
-    def get_or_create(self, session_id: str) -> Dict:
-        if session_id not in self.sessions:
-            self.sessions[session_id] = {
-                "start_time": datetime.now(),
-                "turn_count": 0,
-                "scam_detected": False,
-                "scam_type": None,
-                "confidence": 0.0,
-                "is_active": True,
-                "conversation_history": [],
-                "extracted_intelligence": {
-                    "bankAccounts": [],
-                    "upiIds": [],
-                    "phishingLinks": [],
-                    "phoneNumbers": [],
-                    "suspiciousKeywords": []
-                },
-                "agent_notes": "",
-                "callback_sent": False
-            }
-        return self.sessions[session_id]
+#     def get_or_create(self, session_id: str) -> Dict:
+#         if session_id not in self.sessions:
+#             self.sessions[session_id] = {
+#                 "start_time": datetime.now(),
+#                 "turn_count": 0,
+#                 "scam_detected": False,
+#                 "scam_type": None,
+#                 "confidence": 0.0,
+#                 "is_active": True,
+#                 "conversation_history": [],
+#                 "extracted_intelligence": {
+#                     "bankAccounts": [],
+#                     "upiIds": [],
+#                     "phishingLinks": [],
+#                     "phoneNumbers": [],
+#                     "suspiciousKeywords": []
+#                 },
+#                 "agent_notes": "",
+#                 "callback_sent": False
+#             }
+#         return self.sessions[session_id]
     
-    def update_session(self, session_id: str, updates: Dict):
-        if session_id in self.sessions:
-            self.sessions[session_id].update(updates)
+#     def update_session(self, session_id: str, updates: Dict):
+#         if session_id in self.sessions:
+#             self.sessions[session_id].update(updates)
     
-    def get_session(self, session_id: str) -> Optional[Dict]:
-        return self.sessions.get(session_id)
+#     def get_session(self, session_id: str) -> Optional[Dict]:
+#         return self.sessions.get(session_id)
     
-    def delete_session(self, session_id: str):
-        if session_id in self.sessions:
-            del self.sessions[session_id]
+#     def delete_session(self, session_id: str):
+#         if session_id in self.sessions:
+#             del self.sessions[session_id]
 
 
-class IntelligenceExtractor:
+# class IntelligenceExtractor:
     
-    def __init__(self):
-        self.phone_pattern = re.compile(r'\+?91?\s*\d{10}|\b\d{10}\b')
-        self.url_pattern = re.compile(r'http[s]?://[^\s]+')
-        self.upi_pattern = re.compile(r'[\w\.\-]+@[a-zA-Z]+')
-        self.bank_pattern = re.compile(r'\b\d{9,18}\b')
+#     def __init__(self):
+#         self.phone_pattern = re.compile(r'\+?91?\s*\d{10}|\b\d{10}\b')
+#         self.url_pattern = re.compile(r'http[s]?://[^\s]+')
+#         self.upi_pattern = re.compile(r'[\w\.\-]+@[a-zA-Z]+')
+#         self.bank_pattern = re.compile(r'\b\d{9,18}\b')
         
-        self.scam_keywords = [
-            "urgent", "immediately", "blocked", "suspended", "verify",
-            "otp", "cvv", "pin", "account", "bank", "upi", "payment",
-            "prize", "won", "lottery", "claim", "refund", "verify now"
-        ]
+#         self.scam_keywords = [
+#             "urgent", "immediately", "blocked", "suspended", "verify",
+#             "otp", "cvv", "pin", "account", "bank", "upi", "payment",
+#             "prize", "won", "lottery", "claim", "refund", "verify now"
+#         ]
     
-    def extract_from_text(self, text: str) -> Dict:
-        phones = list(set(self.phone_pattern.findall(text)))
-        urls = list(set(self.url_pattern.findall(text)))
-        upis = list(set(self.upi_pattern.findall(text)))
-        banks = list(set(self.bank_pattern.findall(text)))
+#     def extract_from_text(self, text: str) -> Dict:
+#         phones = list(set(self.phone_pattern.findall(text)))
+#         urls = list(set(self.url_pattern.findall(text)))
+#         upis = list(set(self.upi_pattern.findall(text)))
+#         banks = list(set(self.bank_pattern.findall(text)))
         
-        text_lower = text.lower()
-        keywords = [kw for kw in self.scam_keywords if kw in text_lower]
+#         text_lower = text.lower()
+#         keywords = [kw for kw in self.scam_keywords if kw in text_lower]
         
-        return {
-            "phoneNumbers": phones[:10],
-            "phishingLinks": urls[:10],
-            "upiIds": upis[:15],
-            "bankAccounts": banks[:10],
-            "suspiciousKeywords": list(set(keywords))[:15]
-        }
+#         return {
+#             "phoneNumbers": phones[:10],
+#             "phishingLinks": urls[:10],
+#             "upiIds": upis[:15],
+#             "bankAccounts": banks[:10],
+#             "suspiciousKeywords": list(set(keywords))[:15]
+#         }
     
-    def merge_intelligence(self, existing: Dict, new: Dict) -> Dict:
-        merged = {}
-        for key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers", "suspiciousKeywords"]:
-            existing_list = existing.get(key, [])
-            new_list = new.get(key, [])
-            merged[key] = list(set(existing_list + new_list))[:20]
-        return merged
+#     def merge_intelligence(self, existing: Dict, new: Dict) -> Dict:
+#         merged = {}
+#         for key in ["bankAccounts", "upiIds", "phishingLinks", "phoneNumbers", "suspiciousKeywords"]:
+#             existing_list = existing.get(key, [])
+#             new_list = new.get(key, [])
+#             merged[key] = list(set(existing_list + new_list))[:20]
+#         return merged
 
 
-class ScamDetector:
+# class ScamDetector:
     
-    def __init__(self):
-        self.critical_keywords = {
-            "account blocked", "verify immediately", "share otp",
-            "share cvv", "share pin", "account suspended",
-            "urgent verification", "confirm password", "account terminated"
-        }
+#     def __init__(self):
+#         self.critical_keywords = {
+#             "account blocked", "verify immediately", "share otp",
+#             "share cvv", "share pin", "account suspended",
+#             "urgent verification", "confirm password", "account terminated"
+#         }
         
-        self.warning_keywords = {
-            "verify", "urgent", "immediately", "account", "bank",
-            "suspended", "blocked", "upi", "payment failed"
-        }
+#         self.warning_keywords = {
+#             "verify", "urgent", "immediately", "account", "bank",
+#             "suspended", "blocked", "upi", "payment failed"
+#         }
         
-        self.contextual_keywords = {
-            "prize", "won", "lottery", "congratulations", "claim",
-            "refund", "tax", "reward"
-        }
+#         self.contextual_keywords = {
+#             "prize", "won", "lottery", "congratulations", "claim",
+#             "refund", "tax", "reward"
+#         }
         
-        self.patterns = {
-            "phone": re.compile(r'\b\d{10}\b'),
-            "url": re.compile(r'http[s]?://[^\s]+'),
-            "suspicious_url": re.compile(r'bit\.ly|tinyurl|short\.|goo\.gl'),
-            "upi": re.compile(r'[\w\.\-]+@[\w]+')
-        }
+#         self.patterns = {
+#             "phone": re.compile(r'\b\d{10}\b'),
+#             "url": re.compile(r'http[s]?://[^\s]+'),
+#             "suspicious_url": re.compile(r'bit\.ly|tinyurl|short\.|goo\.gl'),
+#             "upi": re.compile(r'[\w\.\-]+@[\w]+')
+#         }
     
-    def detect(self, text: str) -> Dict:
-        text_lower = text.lower()
+#     def detect(self, text: str) -> Dict:
+#         text_lower = text.lower()
         
-        confidence = 0.0
-        indicators = []
-        is_scam = False
-        scam_type = None
+#         confidence = 0.0
+#         indicators = []
+#         is_scam = False
+#         scam_type = None
         
-        for keyword in self.critical_keywords:
-            if keyword in text_lower:
-                confidence += 0.8
-                indicators.append(f"Critical: '{keyword}'")
-                is_scam = True
-                scam_type = "Banking Fraud"
-                break
+#         for keyword in self.critical_keywords:
+#             if keyword in text_lower:
+#                 confidence += 0.8
+#                 indicators.append(f"Critical: '{keyword}'")
+#                 is_scam = True
+#                 scam_type = "Banking Fraud"
+#                 break
         
-        if not is_scam:
-            found_warnings = 0
-            for keyword in self.warning_keywords:
-                if keyword in text_lower:
-                    confidence += 0.15
-                    found_warnings += 1
-                    indicators.append(f"Warning: '{keyword}'")
-                    if found_warnings >= 3:
-                        break
+#         if not is_scam:
+#             found_warnings = 0
+#             for keyword in self.warning_keywords:
+#                 if keyword in text_lower:
+#                     confidence += 0.15
+#                     found_warnings += 1
+#                     indicators.append(f"Warning: '{keyword}'")
+#                     if found_warnings >= 3:
+#                         break
             
-            if found_warnings >= 2:
-                is_scam = True
-                scam_type = "Phishing"
+#             if found_warnings >= 2:
+#                 is_scam = True
+#                 scam_type = "Phishing"
         
-        if self.patterns["phone"].search(text):
-            confidence += 0.1
-            indicators.append("Contains phone number")
+#         if self.patterns["phone"].search(text):
+#             confidence += 0.1
+#             indicators.append("Contains phone number")
         
-        if self.patterns["suspicious_url"].search(text):
-            confidence += 0.2
-            indicators.append("Suspicious URL found")
-        elif self.patterns["url"].search(text):
-            confidence += 0.05
-            indicators.append("Contains URL")
+#         if self.patterns["suspicious_url"].search(text):
+#             confidence += 0.2
+#             indicators.append("Suspicious URL found")
+#         elif self.patterns["url"].search(text):
+#             confidence += 0.05
+#             indicators.append("Contains URL")
         
-        if self.patterns["upi"].search(text):
-            confidence += 0.15
-            indicators.append("Contains UPI ID pattern")
-            if not scam_type:
-                scam_type = "UPI Fraud"
+#         if self.patterns["upi"].search(text):
+#             confidence += 0.15
+#             indicators.append("Contains UPI ID pattern")
+#             if not scam_type:
+#                 scam_type = "UPI Fraud"
         
-        for keyword in self.contextual_keywords:
-            if keyword in text_lower:
-                confidence += 0.1
-                indicators.append(f"Contextual: '{keyword}'")
-                if not scam_type:
-                    scam_type = "Lottery Scam" if keyword in ["prize", "won", "lottery"] else "Generic Fraud"
-                break
+#         for keyword in self.contextual_keywords:
+#             if keyword in text_lower:
+#                 confidence += 0.1
+#                 indicators.append(f"Contextual: '{keyword}'")
+#                 if not scam_type:
+#                     scam_type = "Lottery Scam" if keyword in ["prize", "won", "lottery"] else "Generic Fraud"
+#                 break
         
-        confidence = min(confidence, 1.0) # 1.0 represents 100%
-        is_scam = is_scam or confidence >= 0.3
+#         confidence = min(confidence, 1.0) # 1.0 represents 100%
+#         is_scam = is_scam or confidence >= 0.3
         
-        return {
-            "is_scam": is_scam,
-            "confidence": round(confidence, 2),
-            "scam_type": scam_type if is_scam else None,
-            "indicators": indicators[:5],
-            "reasoning": self._generate_reasoning(is_scam, confidence, indicators)
-        }
+#         return {
+#             "is_scam": is_scam,
+#             "confidence": round(confidence, 2),
+#             "scam_type": scam_type if is_scam else None,
+#             "indicators": indicators[:5],
+#             "reasoning": self._generate_reasoning(is_scam, confidence, indicators)
+#         }
     
-    def _generate_reasoning(self, is_scam: bool, confidence: float, indicators: List[str]) -> str:
-        if not is_scam:
-            return "No strong scam indicators detected"
-        return f"Detected {len(indicators)} indicators with {confidence*100:.0f}% confidence"
+#     def _generate_reasoning(self, is_scam: bool, confidence: float, indicators: List[str]) -> str:
+#         if not is_scam:
+#             return "No strong scam indicators detected"
+#         return f"Detected {len(indicators)} indicators with {confidence*100:.0f}% confidence"
 
 
-session_manager = SessionManager()
-intelligence_extractor = IntelligenceExtractor()
-scam_detector = ScamDetector()
+# session_manager = SessionManager()
+# intelligence_extractor = IntelligenceExtractor()
+# scam_detector = ScamDetector()
 
 
-async def send_callback_to_guvi(session_id: str, session_data: Dict) -> bool:
-    payload = {
-        "sessionId": session_id,
-        "scamDetected": session_data.get("scam_detected", True),
-        "totalMessagesExchanged": session_data.get("turn_count", 0),
-        "extractedIntelligence": session_data.get("extracted_intelligence", {}),
-        "agentNotes": session_data.get("agent_notes", "Scam engagement completed")
-    }
+# async def send_callback_to_guvi(session_id: str, session_data: Dict) -> bool:
+#     payload = {
+#         "sessionId": session_id,
+#         "scamDetected": session_data.get("scam_detected", True),
+#         "totalMessagesExchanged": session_data.get("turn_count", 0),
+#         "extractedIntelligence": session_data.get("extracted_intelligence", {}),
+#         "agentNotes": session_data.get("agent_notes", "Scam engagement completed")
+#     }
     
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                GUVI_CALLBACK_URL,
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-            return response.status_code == 200
-    except Exception:
-        return False
+#     try:
+#         async with httpx.AsyncClient(timeout=30.0) as client:
+#             response = await client.post(
+#                 GUVI_CALLBACK_URL,
+#                 json=payload,
+#                 headers={"Content-Type": "application/json"}
+#             )
+#             return response.status_code == 200
+#     except Exception:
+#         return False
 
 
-def should_send_callback(session_data: Dict) -> bool:
-    if session_data.get("callback_sent", False):
-        return False
+# def should_send_callback(session_data: Dict) -> bool:
+#     if session_data.get("callback_sent", False):
+#         return False
     
-    if not session_data.get("scam_detected", False):
-        return False
+#     if not session_data.get("scam_detected", False):
+#         return False
     
-    turn_count = session_data.get("turn_count", 0)
-    if turn_count < 3:
-        return False
+#     turn_count = session_data.get("turn_count", 0)
+#     if turn_count < 3:
+#         return False
     
-    intelligence = session_data.get("extracted_intelligence", {})
-    total_intel = sum(len(v) for v in intelligence.values() if isinstance(v, list))
+#     intelligence = session_data.get("extracted_intelligence", {})
+#     total_intel = sum(len(v) for v in intelligence.values() if isinstance(v, list))
     
-    if turn_count >= 10 or total_intel >= 3:
-        return True
+#     if turn_count >= 10 or total_intel >= 3:
+#         return True
     
-    return False
+#     return False
 
 
-def build_conversation_history(
-    incoming_history: List[Message],
-    current_message: Message
-) -> List[Dict]:
-    history = []
+# def build_conversation_history(
+#     incoming_history: List[Message],
+#     current_message: Message
+# ) -> List[Dict]:
+#     history = []
     
-    for msg in incoming_history:
-        history.append({
-            "sender": msg.sender,
-            "text": msg.text,
-            "timestamp": msg.timestamp or 0
-        })
+#     for msg in incoming_history:
+#         history.append({
+#             "sender": msg.sender,
+#             "text": msg.text,
+#             "timestamp": msg.timestamp or 0
+#         })
     
-    history.append({
-        "sender": current_message.sender,
-        "text": current_message.text,
-        "timestamp": current_message.timestamp or 0
-    })
+#     history.append({
+#         "sender": current_message.sender,
+#         "text": current_message.text,
+#         "timestamp": current_message.timestamp or 0
+#     })
     
-    return history
+#     return history
 
 
 # @app.get("/")
@@ -277,7 +274,7 @@ def build_conversation_history(
 
 
 @app.post("/")
-async def process_message(request: IncomingMessageRequest):
+async def process_message(message: IncomingMessage):
     # session_id = request.sessionId
     # message = request.message
     # conversation_history = request.conversationHistory
