@@ -88,6 +88,6 @@ class CallbackPayload(BaseModel):
 
 class IncomingMessage(BaseModel):
     sessionId: str
-    message: dict
-    conversationHistory: List[dict]
-    metadata: dict
+    message: Message
+    conversationHistory: List[Message] = []
+    metadata: MetaData
