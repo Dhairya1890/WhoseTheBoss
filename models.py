@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Any
+from pydantic import BaseModel, Field, validator
+from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime
 from enum import Enum
@@ -34,8 +34,7 @@ class Message(BaseModel):
     text: str
     timestamp: Optional[int] = None
 
-    @field_validator("timestamp", mode="before")
-    @classmethod
+    @validator("timestamp", pre=True)
     def normalize_timestamp(cls, value: Any) -> Optional[int]:
         if value is None or value == "":
             return None
@@ -55,6 +54,12 @@ class MetaData(BaseModel):
     language: str
     locale: str
 
+
+class ConversationRequest(BaseModel):
+    sessionId: str
+    message: Message
+    conversationHistory: List[Message] = []
+    metadata: MetaData
 
 
 class ExtractedIntelligence(BaseModel):
@@ -98,5 +103,5 @@ class CallbackPayload(BaseModel):
 class IncomingMessage(BaseModel):
     sessionId: str
     message: Message
-    conversationHistory: Optional[List[Message]] = []
+    conversationHistory: List[Message] = []
     metadata: Optional[MetaData] = None
