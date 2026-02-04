@@ -17,12 +17,14 @@ class ChatSession(BaseModel):
 
 
 class SenderType(str, Enum):
+    """Enum representing the type of message sender."""
     SCAMMER = "scammer"
     USER = "user"
     AGENT = "agent"
 
 
-class Channel(str, Enum):
+class ChannelType(str, Enum):
+    """Enum representing supported communication channels."""
     SMS = "SMS"
     WHATSAPP = "Whatsapp"
     EMAIL = "Email"
@@ -30,22 +32,41 @@ class Channel(str, Enum):
 
 
 class Message(BaseModel):
-    sender: str
+    """Represents a single message in the conversation."""
+    sender: SenderType
     text: str
-    timestamp: Optional[int] = None
+    timestamp: int
 
 
 class MetaData(BaseModel):
-    channel: Optional[str] = None
-    language: Optional[str] = None
-    locale: Optional[str] = None
+    """Metadata associated with the conversation."""
+    channel: ChannelType
+    language: str = "English"
+    locale: str = "IN"
 
 
-class ConversationRequest(BaseModel):
+class IncomingMessageRequest(BaseModel):
+    """Data model for incoming messages from suspected scammers."""
     sessionId: str
     message: Message
     conversationHistory: List[Message] = []
-    metadata: Optional[MetaData] = None
+    metadata: MetaData
+
+    def is_first_message(self) -> bool:
+        """Check if this is the first message in the conversation."""
+        return len(self.conversationHistory) == 0
+
+    def get_full_conversation(self) -> List[Message]:
+        """Get the full conversation including the current message."""
+        return self.conversationHistory + [self.message]
+
+    def get_message_count(self) -> int:
+        """Get the total number of messages including the current one."""
+        return len(self.conversationHistory) + 1
+
+
+# Alias for backward compatibility
+ConversationRequest = IncomingMessageRequest
 
 
 class ExtractedIntelligence(BaseModel):
@@ -84,10 +105,3 @@ class CallbackPayload(BaseModel):
     totalMessagesExchanged: int
     extractedIntelligence: ExtractedIntelligence
     agentNotes: str
-
-
-class IncomingMessage(BaseModel):
-    sessionId: str
-    message: dict
-    conversationHistory: List[dict]
-    metadata: dict
