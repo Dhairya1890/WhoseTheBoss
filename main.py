@@ -277,67 +277,67 @@ def build_conversation_history(
 
 
 @app.post("/")
-async def process_message(request: IncomingMessage):
-    session_id = request.sessionId
-    message = request.message
-    conversation_history = request.conversationHistory
+async def process_message(message: IncomingMessage):
+    # session_id = request.sessionId
+    # message = request.message
+    # conversation_history = request.conversationHistory
     
-    session_data = session_manager.get_or_create(session_id)
+    # session_data = session_manager.get_or_create(session_id)
     
-    message_text = message.text
+    # message_text = message.text
     
-    full_history = build_conversation_history(conversation_history, message)
-    session_data["conversation_history"] = full_history
-    session_data["turn_count"] = len(full_history)
+    # full_history = build_conversation_history(conversation_history, message)
+    # session_data["conversation_history"] = full_history
+    # session_data["turn_count"] = len(full_history)
     
-    new_intel = intelligence_extractor.extract_from_text(message_text)
-    session_data["extracted_intelligence"] = intelligence_extractor.merge_intelligence(
-        session_data["extracted_intelligence"],
-        new_intel
-    )
+    # new_intel = intelligence_extractor.extract_from_text(message_text)
+    # session_data["extracted_intelligence"] = intelligence_extractor.merge_intelligence(
+    #     session_data["extracted_intelligence"],
+    #     new_intel
+    # )
     
-    if not session_data.get("scam_detected", False):
-        detection_result = scam_detector.detect(message_text)
+    # if not session_data.get("scam_detected", False):
+    #     detection_result = scam_detector.detect(message_text)
         
-        if detection_result["is_scam"]:
-            session_data["scam_detected"] = True
-            session_data["scam_type"] = detection_result["scam_type"]
-            session_data["confidence"] = detection_result["confidence"]
+    #     if detection_result["is_scam"]:
+    #         session_data["scam_detected"] = True
+    #         session_data["scam_type"] = detection_result["scam_type"]
+    #         session_data["confidence"] = detection_result["confidence"]
     
-    if session_data.get("scam_detected", False):
-        try:
-            llm_intel = await llm_service.extract_intelligence_llm(full_history)
-            session_data["extracted_intelligence"] = intelligence_extractor.merge_intelligence(
-                session_data["extracted_intelligence"],
-                llm_intel
-            )
-            if llm_intel.get("agentNotes"):
-                session_data["agent_notes"] = llm_intel["agentNotes"]
-        except Exception:
-            pass
+    # if session_data.get("scam_detected", False):
+    #     try:
+    #         llm_intel = await llm_service.extract_intelligence_llm(full_history)
+    #         session_data["extracted_intelligence"] = intelligence_extractor.merge_intelligence(
+    #             session_data["extracted_intelligence"],
+    #             llm_intel
+    #         )
+    #         if llm_intel.get("agentNotes"):
+    #             session_data["agent_notes"] = llm_intel["agentNotes"]
+    #     except Exception:
+    #         pass
         
-        try:
-            agent_reply = await llm_service.generate_agent_response(
-                scam_type=session_data.get("scam_type", "Phishing"),
-                message=message_text,
-                conversation_history=full_history,
-                extracted_intelligence=session_data["extracted_intelligence"]
-            )
-        except Exception:
-            agent_reply = get_fallback_response(
-                session_data.get("scam_type"),
-                session_data.get("turn_count", 0)
-            )
-    else:
-        agent_reply = get_fallback_response(None, session_data.get("turn_count", 0))
+    #     try:
+    #         agent_reply = await llm_service.generate_agent_response(
+    #             scam_type=session_data.get("scam_type", "Phishing"),
+    #             message=message_text,
+    #             conversation_history=full_history,
+    #             extracted_intelligence=session_data["extracted_intelligence"]
+    #         )
+    #     except Exception:
+    #         agent_reply = get_fallback_response(
+    #             session_data.get("scam_type"),
+    #             session_data.get("turn_count", 0)
+    #         )
+    # else:
+    #     agent_reply = get_fallback_response(None, session_data.get("turn_count", 0))
     
-    session_manager.update_session(session_id, session_data)
+    # session_manager.update_session(session_id, session_data)
     
-    if should_send_callback(session_data):
-        callback_success = await send_callback_to_guvi(session_id, session_data)
-        if callback_success:
-            session_data["callback_sent"] = True
-            session_manager.update_session(session_id, {"callback_sent": True})
+    # if should_send_callback(session_data):
+    #     callback_success = await send_callback_to_guvi(session_id, session_data)
+    #     if callback_success:
+    #         session_data["callback_sent"] = True
+    #         session_manager.update_session(session_id, {"callback_sent": True})
     
     return {
         "status": "success",
