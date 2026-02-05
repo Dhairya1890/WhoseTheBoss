@@ -26,13 +26,13 @@ class Channel(str, Enum):
     SMS = "SMS"
     WHATSAPP = "Whatsapp"
     EMAIL = "Email"
-    TELEGRAM = "Telegram"
+    CHAT = "Chat"
 
 
 class Message(BaseModel):
     sender: str
     text: str
-    timestamp: int
+    timestamp: datetime
 
 
 class MetaData(BaseModel):
@@ -87,7 +87,7 @@ class CallbackPayload(BaseModel):
 
 
 class IncomingMessage(BaseModel):
-    sessionId: str
-    message: Message
-    conversationHistory: List[Message] = []
-    metadata: MetaData
+    sessionId : str
+    message : Dict
+    conversationHistory : Optional[List[Dict]] 
+    metadata : Optional[Dict]
