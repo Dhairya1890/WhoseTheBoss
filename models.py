@@ -88,6 +88,6 @@ class CallbackPayload(BaseModel):
 
 class IncomingMessage(BaseModel):
     sessionId : str
-    message : Optional[Message]
+    message : Message
     conversationHistory : Optional[List[Dict]] 
     metadata : Optional[Dict]
