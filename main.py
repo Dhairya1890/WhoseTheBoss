@@ -70,7 +70,8 @@ class IntelligenceExtractor:
     def __init__(self):
         self.phone_pattern = re.compile(r'\+?91?\s*\d{10}|\b\d{10}\b')
         self.url_pattern = re.compile(r'http[s]?://[^\s]+')
-        self.upi_pattern = re.compile(r'[\w\.\-]+@[a-zA-Z]+')
+        # UPI pattern: handles formats like user@ybl, 9876543210@paytm, name.surname@okicici, etc.
+        self.upi_pattern = re.compile(r'[a-zA-Z0-9\.\-_]+@[a-zA-Z][a-zA-Z0-9]*')
         self.bank_pattern = re.compile(r'\b\d{9,18}\b')
         
         self.scam_keywords = [

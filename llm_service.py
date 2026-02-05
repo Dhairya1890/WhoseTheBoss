@@ -14,12 +14,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # List of models to try in order (fallback chain)
 GEMINI_MODELS = [
-    "gemini-3-pro-preview",
-    "gemini-3-flash-preview",
     "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash-001"
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-3-flash-preview",
 ]
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -183,13 +181,14 @@ class GeminiLLMService:
             text = msg.get("text", "")
             full_conversation += f"{sender}: {text}\n"
         
-        system_instruction = """You are a JSON extractor. Extract scam data and return ONLY a single-line compact JSON. Format: {"bankAccounts":[],"upiIds":[],"phishingLinks":[],"phoneNumbers":[],"agentNotes":"brief scam summary"}"""
+        system_instruction = """You are a JSON extractor. Extract scam data and return ONLY a single-line compact JSON. Format: {"bankAccounts":[],"upiIds":[],"phishingLinks":[],"phoneNumbers":[],"agentNotes":"brief scam summary"}
+IMPORTANT: Extract ALL phone numbers (any format), ALL UPI IDs (format: name@bankcode like user@ybl, 9876543210@paytm), ALL bank/card numbers mentioned."""
 
         prompt = f"""Extract scam intelligence from chat. Include agentNotes summarizing scammer tactics. Return ONLY compact JSON:
 {full_conversation}
 JSON:"""
 
-        response = await self._call_gemini(prompt, system_instruction, max_tokens=512)
+        response = await self._call_gemini(prompt, system_instruction, max_tokens=1024)
         
         return self._parse_intelligence_response(response, conversation_history)
 
@@ -241,6 +240,7 @@ JSON:"""
 
     def _repair_json(self, json_str: str) -> str:
         """Attempt to repair truncated or malformed JSON"""
+        import re
         json_str = json_str.strip()
         
         # If it doesn't start with {, find the first {
@@ -248,6 +248,16 @@ JSON:"""
             idx = json_str.find('{')
             if idx != -1:
                 json_str = json_str[idx:]
+        
+        # Fix truncated strings like "value (missing closing quote)
+        # Pattern: string that ends without closing quote before ] or }
+        json_str = re.sub(r'"([^"\[\]{}]+)$', r'"\1"', json_str)
+        
+        # Fix truncated array items: ["value  -> ["value"]
+        json_str = re.sub(r'\["([^"\[\]{}]+)$', r'["\1"]', json_str)
+        
+        # Fix truncated string values in objects: :"value -> :"value"
+        json_str = re.sub(r':"([^"\[\]{}]+)$', r':"\1"', json_str)
         
         # Count brackets to check if JSON is complete
         open_braces = json_str.count('{')
@@ -262,10 +272,16 @@ JSON:"""
         # Try to close truncated arrays and objects
         # Remove trailing incomplete values
         # Pattern: ends with "key": or "key":[ or incomplete string
-        import re
         
-        # Remove incomplete trailing content
-        json_str = re.sub(r',\s*"[^"]*"?\s*:?\s*\[?\s*"?[^"\]]*$', '', json_str)
+        # Remove incomplete trailing content (but keep valid data)
+        json_str = re.sub(r',\s*"[^"]*"\s*:\s*$', '', json_str)  # Remove trailing "key":
+        json_str = re.sub(r',\s*"[^"]*"\s*:\s*\[\s*$', '', json_str)  # Remove trailing "key":[
+        
+        # Recount after cleanup
+        open_braces = json_str.count('{')
+        close_braces = json_str.count('}')
+        open_brackets = json_str.count('[')
+        close_brackets = json_str.count(']')
         
         # Add missing closing brackets
         while open_brackets > close_brackets:
@@ -295,10 +311,13 @@ JSON:"""
         if upi_matches:
             result["upiIds"] = list(set(upi_matches))[:10]
         
-        # Extract phone numbers (with or without closing quote)
-        phone_matches = re.findall(r'"(\+?91?\d{10})"?', response)
-        if phone_matches:
-            result["phoneNumbers"] = list(set(phone_matches))[:10]
+        # Extract phone numbers - more flexible pattern for various formats
+        phone_matches = re.findall(r'"?(\+?\d{1,4}[\s\-]?\d{6,14})"?', response)
+        # Also try simpler pattern for 10-digit numbers
+        phone_matches2 = re.findall(r'"(\d{10,12})"', response)
+        all_phones = list(set(phone_matches + phone_matches2))
+        if all_phones:
+            result["phoneNumbers"] = all_phones[:10]
         
         # Extract URLs (with or without closing quote)
         url_matches = re.findall(r'"(https?://[^\s"\]]+)"?', response)
