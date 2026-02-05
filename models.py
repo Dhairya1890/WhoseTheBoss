@@ -30,7 +30,7 @@ class Channel(str, Enum):
 
 
 class Message(BaseModel):
-    sender: str
+    sender: SenderType # Changed from str
     text: str
     timestamp: datetime
 
