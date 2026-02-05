@@ -11,7 +11,16 @@ load_dotenv()
 
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-2.5-flash-lite"
+
+# List of models to try in order (fallback chain)
+GEMINI_MODELS = [
+    "gemini-3-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-001"
+]
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -20,47 +29,78 @@ class GeminiLLMService:
 
     def __init__(self):
         self.api_key = GEMINI_API_KEY
-        self.model = GEMINI_MODEL
+        self.models = GEMINI_MODELS
+        self.current_model_index = 0
         self.client = client
+        self.model_exhausted = {}  # Track which models are rate limited
 
-    async def _call_gemini(self, prompt: str, system_instruction: str = None) -> str:
-        try:
-            config = types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=150,  # Reduced to save tokens
-                top_p=0.9,
-            )
+    @property
+    def model(self):
+        return self.models[self.current_model_index]
+
+    def _switch_to_next_model(self) -> bool:
+        """Switch to next available model. Returns False if all models exhausted."""
+        self.model_exhausted[self.model] = datetime.now()
+        
+        # Try to find a non-exhausted model
+        for i in range(len(self.models)):
+            next_index = (self.current_model_index + 1 + i) % len(self.models)
+            model_name = self.models[next_index]
             
-            if system_instruction:
-                config.system_instruction = system_instruction
+            # Check if model was exhausted more than 60 seconds ago (reset it)
+            if model_name in self.model_exhausted:
+                time_diff = (datetime.now() - self.model_exhausted[model_name]).seconds
+                if time_diff > 60:
+                    del self.model_exhausted[model_name]
             
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=config
-            )
-            
-            if response and response.text:
-                return response.text
-            return ""
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                print(f"Rate limited, waiting 5s...")
-                await asyncio.sleep(5)
-                # Single retry
-                try:
-                    response = self.client.models.generate_content(
-                        model=self.model,
-                        contents=prompt,
-                        config=config
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception:
-                    pass
-            print(f"Gemini API error: {e}")
-            return ""
+            if model_name not in self.model_exhausted:
+                self.current_model_index = next_index
+                print(f"Switched to model: {self.model}")
+                return True
+        
+        print("All models exhausted, waiting...")
+        return False
+
+    async def _call_gemini(self, prompt: str, system_instruction: str = None, max_tokens: int = 1024) -> str:
+        max_retries = len(self.models) + 1
+        
+        for attempt in range(max_retries):
+            try:
+                config = types.GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=max_tokens,
+                    top_p=0.9,
+                )
+                
+                if system_instruction:
+                    config.system_instruction = system_instruction
+                
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=config
+                )
+                
+                if response and response.text:
+                    return response.text
+                return ""
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    print(f"Rate limited on {self.model}, switching model...")
+                    if self._switch_to_next_model():
+                        continue  # Retry with new model
+                    else:
+                        # All models exhausted, wait and retry
+                        print("All models rate limited, waiting 10s...")
+                        await asyncio.sleep(10)
+                        # Reset exhausted models after waiting
+                        self.model_exhausted.clear()
+                        continue
+                print(f"Gemini API error: {e}")
+                return ""
+        
+        return ""
 
     async def detect_scam_intent(self, message: str, conversation_history: List[Dict] = None) -> Dict:
         history_text = ""
@@ -125,7 +165,7 @@ class GeminiLLMService:
 
         prompt = f"""Type:{scam_type}\nChat:\n{history_text}\nScammer:{message}\nReply as victim:"""
 
-        response = await self._call_gemini(prompt, system_instruction)
+        response = await self._call_gemini(prompt, system_instruction, max_tokens=200)
         
         if response:
             response = response.strip().strip('"').strip("'")
@@ -143,16 +183,33 @@ class GeminiLLMService:
             text = msg.get("text", "")
             full_conversation += f"{sender}: {text}\n"
         
-        system_instruction = """Extract: bankAccounts[], upiIds[], phishingLinks[], phoneNumbers[], tactics[]. Return JSON only."""
+        system_instruction = """You are a JSON extractor. Extract scam data and return ONLY a single-line compact JSON. Format: {"bankAccounts":[],"upiIds":[],"phishingLinks":[],"phoneNumbers":[],"agentNotes":"brief scam summary"}"""
 
-        prompt = f"""Chat:\n{full_conversation}\nJSON:"""
+        prompt = f"""Extract scam intelligence from chat. Include agentNotes summarizing scammer tactics. Return ONLY compact JSON:
+{full_conversation}
+JSON:"""
 
-        response = await self._call_gemini(prompt, system_instruction)
+        response = await self._call_gemini(prompt, system_instruction, max_tokens=512)
         
         return self._parse_intelligence_response(response, conversation_history)
 
     def _parse_intelligence_response(self, response: str, conversation_history: List[Dict]) -> Dict:
         import json
+        
+        # Return empty structure if response is empty
+        empty_result = {
+            "bankAccounts": [],
+            "upiIds": [],
+            "phishingLinks": [],
+            "phoneNumbers": [],
+            "suspiciousKeywords": [],
+            "tactics": [],
+            "agentNotes": ""
+        }
+        
+        if not response or not response.strip():
+            print("Warning: LLM returned empty response for intelligence extraction")
+            return empty_result
         
         try:
             response = response.strip()
@@ -164,6 +221,9 @@ class GeminiLLMService:
                 response = response[:-3]
             response = response.strip()
             
+            # Try to repair truncated JSON
+            response = self._repair_json(response)
+            
             result = json.loads(response)
             return {
                 "bankAccounts": result.get("bankAccounts", []),
@@ -174,8 +234,87 @@ class GeminiLLMService:
                 "tactics": result.get("tactics", []),
                 "agentNotes": result.get("agentNotes", "")
             }
-        except (json.JSONDecodeError, KeyError, TypeError):
-            raise Exception("LLM failed to extract intelligence from conversation")
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"Warning: Failed to parse LLM response: {e}. Response was: {response[:100]}")
+            # Try to extract partial data from truncated JSON using regex
+            return self._extract_partial_intelligence(response, empty_result)
+
+    def _repair_json(self, json_str: str) -> str:
+        """Attempt to repair truncated or malformed JSON"""
+        json_str = json_str.strip()
+        
+        # If it doesn't start with {, find the first {
+        if not json_str.startswith('{'):
+            idx = json_str.find('{')
+            if idx != -1:
+                json_str = json_str[idx:]
+        
+        # Count brackets to check if JSON is complete
+        open_braces = json_str.count('{')
+        close_braces = json_str.count('}')
+        open_brackets = json_str.count('[')
+        close_brackets = json_str.count(']')
+        
+        # If balanced, return as-is
+        if open_braces == close_braces and open_brackets == close_brackets:
+            return json_str
+        
+        # Try to close truncated arrays and objects
+        # Remove trailing incomplete values
+        # Pattern: ends with "key": or "key":[ or incomplete string
+        import re
+        
+        # Remove incomplete trailing content
+        json_str = re.sub(r',\s*"[^"]*"?\s*:?\s*\[?\s*"?[^"\]]*$', '', json_str)
+        
+        # Add missing closing brackets
+        while open_brackets > close_brackets:
+            json_str += ']'
+            close_brackets += 1
+        
+        # Add missing closing braces
+        while open_braces > close_braces:
+            json_str += '}'
+            close_braces += 1
+        
+        return json_str
+
+    def _extract_partial_intelligence(self, response: str, empty_result: Dict) -> Dict:
+        """Extract whatever data we can from a truncated/malformed JSON response"""
+        import re
+        
+        result = empty_result.copy()
+        
+        # Extract bank accounts - look for numbers 9-18 digits (with or without closing quote)
+        bank_matches = re.findall(r'"(\d{9,18})"?', response)
+        if bank_matches:
+            result["bankAccounts"] = list(set(bank_matches))[:10]
+        
+        # Extract UPI IDs (with or without closing quote)
+        upi_matches = re.findall(r'"([\w\.\-]+@[a-zA-Z]+)"?', response)
+        if upi_matches:
+            result["upiIds"] = list(set(upi_matches))[:10]
+        
+        # Extract phone numbers (with or without closing quote)
+        phone_matches = re.findall(r'"(\+?91?\d{10})"?', response)
+        if phone_matches:
+            result["phoneNumbers"] = list(set(phone_matches))[:10]
+        
+        # Extract URLs (with or without closing quote)
+        url_matches = re.findall(r'"(https?://[^\s"\]]+)"?', response)
+        if url_matches:
+            result["phishingLinks"] = list(set(url_matches))[:10]
+        
+        # Extract keywords (simple strings in arrays)
+        keyword_matches = re.findall(r'"([a-zA-Z][a-zA-Z\s]{2,20})"', response)
+        if keyword_matches:
+            # Filter out field names
+            field_names = {"bankAccounts", "upiIds", "phishingLinks", "phoneNumbers", "suspiciousKeywords", "tactics", "agentNotes"}
+            keywords = [k for k in keyword_matches if k not in field_names]
+            result["suspiciousKeywords"] = list(set(keywords))[:15]
+        
+        print(f"Extracted partial data from truncated response: {result}")
+        return result
 
 
 llm_service = GeminiLLMService()

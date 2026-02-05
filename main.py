@@ -23,7 +23,7 @@ app = FastAPI()
 #     allow_headers=["*"]
 # )
 
-GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
+GUVI_CALLBACK_URL = "http://0.0.0.0:8080/getResponse"
 
 
 class SessionManager:
@@ -249,6 +249,77 @@ def should_send_callback(session_data: Dict) -> bool:
     return False
 
 
+def _generate_agent_notes(session_data: Dict) -> str:
+    """Auto-generate agent notes summarizing scammer behavior and extracted intelligence"""
+    scam_type = session_data.get("scam_type", "Unknown")
+    confidence = session_data.get("confidence", 0)
+    intel = session_data.get("extracted_intelligence", {})
+    keywords = intel.get("suspiciousKeywords", [])
+    
+    notes_parts = []
+    behavior_parts = []
+    
+    # Analyze scammer behavior based on keywords
+    keyword_set = set(k.lower() for k in keywords)
+    
+    # Urgency tactics
+    urgency_words = {"urgent", "immediately", "now", "fast", "quick", "hurry", "deadline"}
+    if keyword_set & urgency_words:
+        behavior_parts.append("used urgency tactics to pressure victim")
+    
+    # Fear tactics
+    fear_words = {"blocked", "suspended", "terminated", "deactivated", "frozen", "locked", "cancelled"}
+    if keyword_set & fear_words:
+        behavior_parts.append("created fear about account/service termination")
+    
+    # Authority impersonation
+    authority_words = {"bank", "rbi", "police", "government", "official", "manager", "officer"}
+    if keyword_set & authority_words:
+        behavior_parts.append("impersonated authority figure")
+    
+    # Payment redirection
+    payment_words = {"upi", "payment", "transfer", "send", "pay", "amount", "refund"}
+    if keyword_set & payment_words:
+        behavior_parts.append("attempted payment redirection")
+    
+    # Credential harvesting
+    cred_words = {"otp", "pin", "cvv", "password", "verify", "confirm", "details"}
+    if keyword_set & cred_words:
+        behavior_parts.append("attempted to extract sensitive credentials")
+    
+    # Prize/lottery scam
+    prize_words = {"prize", "won", "winner", "lottery", "reward", "congratulations", "lucky"}
+    if keyword_set & prize_words:
+        behavior_parts.append("used fake prize/lottery lure")
+    
+    # Build behavior summary
+    if behavior_parts:
+        notes_parts.append(f"Scammer behavior: {', '.join(behavior_parts)}")
+    
+    # Add scam classification
+    if scam_type and scam_type != "Unknown":
+        notes_parts.append(f"Classification: {scam_type} ({int(confidence*100)}% confidence)")
+    
+    # Add extracted intelligence summary
+    intel_summary = []
+    if intel.get("bankAccounts"):
+        intel_summary.append(f"{len(intel['bankAccounts'])} bank account(s)")
+    if intel.get("upiIds"):
+        intel_summary.append(f"{len(intel['upiIds'])} UPI ID(s)")
+    if intel.get("phoneNumbers"):
+        intel_summary.append(f"{len(intel['phoneNumbers'])} phone number(s)")
+    if intel.get("phishingLinks"):
+        intel_summary.append(f"{len(intel['phishingLinks'])} phishing link(s)")
+    
+    if intel_summary:
+        notes_parts.append(f"Intelligence extracted: {', '.join(intel_summary)}")
+    
+    if not notes_parts:
+        return "Scam engagement in progress - analyzing scammer behavior"
+    
+    return ". ".join(notes_parts)
+
+
 def build_conversation_history(
     incoming_history: List[Message],
     current_message: Message
@@ -326,6 +397,10 @@ async def process_message(request: IncomingMessage):
         except Exception as e:
             print(f"Error extracting intelligence: {e}")
     
+    # Auto-generate agent notes if empty
+    if not session_data.get("agent_notes"):
+        session_data["agent_notes"] = _generate_agent_notes(session_data)
+    
     try:
         agent_reply = await llm_service.generate_agent_response(
             scam_type=session_data.get("scam_type", "Phishing"),
@@ -350,130 +425,130 @@ async def process_message(request: IncomingMessage):
     }
 
 
-# @app.post("/analyze")
-# async def analyze_message(request: IncomingMessage):
-#     message_text = request.message.text
-#     conversation_history = request.conversationHistory
+@app.post("/analyze")
+async def analyze_message(request: IncomingMessage):
+    message_text = request.message.text
+    conversation_history = request.conversationHistory
     
-#     detection_result = scam_detector.detect(message_text)
+    detection_result = scam_detector.detect(message_text)
     
-#     if detection_result["is_scam"]:
-#         try:
-#             llm_result = await llm_service.detect_scam_intent(
-#                 message_text,
-#                 conversation_history
-#             )
-#             detection_result["llm_analysis"] = llm_result
-#         except Exception:
-#             pass
+    if detection_result["is_scam"]:
+        try:
+            llm_result = await llm_service.detect_scam_intent(
+                message_text,
+                conversation_history
+            )
+            detection_result["llm_analysis"] = llm_result
+        except Exception:
+            pass
     
-#     intelligence = intelligence_extractor.extract_from_text(message_text)
+    intelligence = intelligence_extractor.extract_from_text(message_text)
     
-#     return {
-#         "status": "success",
-#         "detection": detection_result,
-#         "intelligence": intelligence
-#     }
+    return {
+        "status": "success",
+        "detection": detection_result,
+        "intelligence": intelligence
+    }
 
 
-# @app.post("/extract-intelligence")
-# async def extract_intelligence(request: IncomingMessage):
-#     session_id = request.sessionId
-#     conversation_history = request.conversationHistory
-#     message = request.message
+@app.post("/extract-intelligence")
+async def extract_intelligence(request: IncomingMessage):
+    session_id = request.sessionId
+    conversation_history = request.conversationHistory
+    message = request.message
     
-#     full_history = build_conversation_history(conversation_history, message)
+    full_history = build_conversation_history(conversation_history, message)
     
-#     all_text = " ".join([msg["text"] for msg in full_history])
-#     basic_intel = intelligence_extractor.extract_from_text(all_text)
+    all_text = " ".join([msg["text"] for msg in full_history])
+    basic_intel = intelligence_extractor.extract_from_text(all_text)
     
-#     try:
-#         llm_intel = await llm_service.extract_intelligence_llm(full_history)
-#         merged_intel = intelligence_extractor.merge_intelligence(basic_intel, llm_intel)
-#         merged_intel["tactics"] = llm_intel.get("tactics", [])
-#         merged_intel["agentNotes"] = llm_intel.get("agentNotes", "")
-#     except Exception:
-#         merged_intel = basic_intel
-#         merged_intel["tactics"] = []
-#         merged_intel["agentNotes"] = ""
+    try:
+        llm_intel = await llm_service.extract_intelligence_llm(full_history)
+        merged_intel = intelligence_extractor.merge_intelligence(basic_intel, llm_intel)
+        merged_intel["tactics"] = llm_intel.get("tactics", [])
+        merged_intel["agentNotes"] = llm_intel.get("agentNotes", "")
+    except Exception:
+        merged_intel = basic_intel
+        merged_intel["tactics"] = []
+        merged_intel["agentNotes"] = ""
     
-#     return {
-#         "status": "success",
-#         "sessionId": session_id,
-#         "extractedIntelligence": merged_intel
-#     }
+    return {
+        "status": "success",
+        "sessionId": session_id,
+        "extractedIntelligence": merged_intel
+    }
 
 
-# @app.post("/callback")
-# async def manual_callback(request: IncomingMessage):
-#     session_id = request.sessionId
-#     session_data = session_manager.get_session(session_id)
+@app.post("/callback")
+async def manual_callback(request: IncomingMessage):
+    session_id = request.sessionId
+    session_data = session_manager.get_session(session_id)
     
-#     if not session_data:
-#         conversation_history = request.conversationHistory
-#         message = request.message
-#         full_history = build_conversation_history(conversation_history, message)
+    if not session_data:
+        conversation_history = request.conversationHistory
+        message = request.message
+        full_history = build_conversation_history(conversation_history, message)
         
-#         all_text = " ".join([msg["text"] for msg in full_history])
-#         intel = intelligence_extractor.extract_from_text(all_text)
+        all_text = " ".join([msg["text"] for msg in full_history])
+        intel = intelligence_extractor.extract_from_text(all_text)
         
-#         session_data = {
-#             "scam_detected": True,
-#             "turn_count": len(full_history),
-#             "extracted_intelligence": intel,
-#             "agent_notes": "Manual callback triggered"
-#         }
+        session_data = {
+            "scam_detected": True,
+            "turn_count": len(full_history),
+            "extracted_intelligence": intel,
+            "agent_notes": "Manual callback triggered"
+        }
     
-#     success = await send_callback_to_guvi(session_id, session_data)
+    success = await send_callback_to_guvi(session_id, session_data)
     
-#     return {
-#         "status": "success" if success else "failed",
-#         "callbackSent": success,
-#         "payload": {
-#             "sessionId": session_id,
-#             "scamDetected": session_data.get("scam_detected", True),
-#             "totalMessagesExchanged": session_data.get("turn_count", 0),
-#             "extractedIntelligence": session_data.get("extracted_intelligence", {}),
-#             "agentNotes": session_data.get("agent_notes", "")
-#         }
-#     }
+    return {
+        "status": "success" if success else "failed",
+        "callbackSent": success,
+        "payload": {
+            "sessionId": session_id,
+            "scamDetected": session_data.get("scam_detected", True),
+            "totalMessagesExchanged": session_data.get("turn_count", 0),
+            "extractedIntelligence": session_data.get("extracted_intelligence", {}),
+            "agentNotes": session_data.get("agent_notes", "")
+        }
+    }
 
 
-# @app.get("/session/{session_id}")
-# async def get_session_info(session_id: str):
-#     session_data = session_manager.get_session(session_id)
+@app.get("/session/{session_id}")
+async def get_session_info(session_id: str):
+    session_data = session_manager.get_session(session_id)
     
-#     if not session_data:
-#         raise HTTPException(status_code=404, detail="Session not found")
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
     
-#     return {
-#         "status": "success",
-#         "sessionId": session_id,
-#         "scamDetected": session_data.get("scam_detected", False),
-#         "scamType": session_data.get("scam_type"),
-#         "confidence": session_data.get("confidence", 0),
-#         "turnCount": session_data.get("turn_count", 0),
-#         "extractedIntelligence": session_data.get("extracted_intelligence", {}),
-#         "callbackSent": session_data.get("callback_sent", False)
-#     }
+    return {
+        "status": "success",
+        "sessionId": session_id,
+        "scamDetected": session_data.get("scam_detected", False),
+        "scamType": session_data.get("scam_type"),
+        "confidence": session_data.get("confidence", 0),
+        "turnCount": session_data.get("turn_count", 0),
+        "extractedIntelligence": session_data.get("extracted_intelligence", {}),
+        "callbackSent": session_data.get("callback_sent", False)
+    }
 
 
-# @app.delete("/session/{session_id}")
-# async def end_session(session_id: str):
-#     session_data = session_manager.get_session(session_id)
+@app.delete("/session/{session_id}")
+async def end_session(session_id: str):
+    session_data = session_manager.get_session(session_id)
     
-#     if not session_data:
-#         raise HTTPException(status_code=404, detail="Session not found")
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
     
-#     if session_data.get("scam_detected") and not session_data.get("callback_sent"):
-#         await send_callback_to_guvi(session_id, session_data)
+    if session_data.get("scam_detected") and not session_data.get("callback_sent"):
+        await send_callback_to_guvi(session_id, session_data)
     
-#     session_manager.delete_session(session_id)
+    session_manager.delete_session(session_id)
     
-#     return {
-#         "status": "success",
-#         "message": "Session ended"
-#     }
+    return {
+        "status": "success",
+        "message": "Session ended"
+    }
 
 
 if __name__ == "__main__":
