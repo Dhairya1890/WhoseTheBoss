@@ -356,6 +356,12 @@ async def health_check():
     return {"status": "healthy", "service": "scam-detection-api"}
 
 
+@app.head("/health")
+async def health_head():
+    """HEAD endpoint for lightweight monitoring/uptime checks"""
+    return None
+
+
 @app.post("/")
 async def process_message(request: IncomingMessage):
     session_id = request.sessionId
