@@ -23,7 +23,7 @@ app = FastAPI()
 #     allow_headers=["*"]
 # )
 
-GUVI_CALLBACK_URL = "http://0.0.0.0:8080/getResponse"
+GUVI_CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 
 
 class SessionManager:
