@@ -1,8 +1,8 @@
-# 🛡️ Scam Detection & Engagement API
+# Scam Detection & Engagement API
 
 An intelligent anti-scam chatbot API that detects, engages, and extracts intelligence from scammers using AI-powered analysis. Built with FastAPI and Google Gemini.
 
-## 🎯 Features
+## Features
 
 - **Real-time Scam Detection** - Pattern-based and LLM-powered scam identification
 - **Intelligent Engagement** - AI generates convincing victim responses to extract information
@@ -11,7 +11,7 @@ An intelligent anti-scam chatbot API that detects, engages, and extracts intelli
 - **Automatic Callbacks** - Sends extracted intelligence to GUVI endpoint when sufficient data is collected
 - **Multi-Model Fallback** - Automatic failover between Gemini models for reliability
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 Chat/
@@ -31,7 +31,7 @@ Chat/
 | `ScamDetector` | Rule-based scam detection with confidence scoring |
 | `GeminiLLMService` | AI-powered analysis and response generation |
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -74,7 +74,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 python main.py
 ```
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### `POST /` - Process Message
 
@@ -154,7 +154,7 @@ Retrieves current session state and extracted intelligence.
 
 Ends a session and sends final callback if scam was detected.
 
-## 🔍 Scam Detection
+## Scam Detection
 
 ### Detection Methods
 
@@ -180,7 +180,7 @@ Ends a session and sends final callback if scam was detected.
 - Lottery/Prize Scams
 - Generic Fraud
 
-## 🤖 LLM Integration
+## LLM Integration
 
 ### Supported Models (Fallback Order)
 
@@ -193,7 +193,7 @@ Ends a session and sends final callback if scam was detected.
 
 The service automatically switches models on rate limiting (429 errors) with a 60-second cooldown period.
 
-## 📊 Intelligence Extraction
+## Intelligence Extraction
 
 Automatically extracts:
 
@@ -205,7 +205,7 @@ Automatically extracts:
 | Phishing Links | `http://bit.ly/xyz` |
 | Suspicious Keywords | "urgent", "otp", "verify" |
 
-## 🔄 Callback System
+## Callback System
 
 Automatically sends intelligence to GUVI when:
 - Scam is detected
@@ -229,7 +229,7 @@ Automatically sends intelligence to GUVI when:
 }
 ```
 
-## 🛠️ Development
+## Development
 
 ### Project Structure
 
@@ -255,7 +255,7 @@ self.critical_keywords = {
 }
 ```
 
-## 📝 Environment Variables
+## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -263,7 +263,7 @@ self.critical_keywords = {
 | `API_KEY` | API authentication key | `your-secret-api-key-12345` |
 | `PORT` | Server port | `8000` |
 
-## 📦 Dependencies
+## Dependencies
 
 - **FastAPI** - Web framework
 - **google-genai** - Gemini AI integration
@@ -271,11 +271,6 @@ self.critical_keywords = {
 - **httpx** - Async HTTP client
 - **python-dotenv** - Environment management
 - **uvicorn** - ASGI server
-
-## 📄 License
-
-This project is part of the GUVI Hackathon.
-
 ---
 
-Built with ❤️ for fighting scams
+Built by [Dhairya1890](https://github.com/Dhairya1890)
